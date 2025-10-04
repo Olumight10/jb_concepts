@@ -1,0 +1,425 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1" />
+<title>Card Batch Print — A4 Preview</title>
+<style>
+  :root{
+    --page-w:210mm;
+    --page-h:297mm;
+    --gap:4px;
+    --cell-padding:6px;
+    --cell-border:0.5px solid rgba(0,0,0,0.12);
+    --font-sans:system-ui,-apple-system,Segoe UI,Roboto,"Helvetica Neue",Arial;
+  }
+
+  body{
+    font-family: var(--font-sans);
+    margin:20px;
+    background:#f6f7fb;
+    color:#111;
+  }
+
+  h1{font-size:1.05rem;margin:0 0 12px}
+  .controls{
+    display:flex;
+    gap:12px;
+    align-items:flex-start;
+    margin-bottom:12px;
+    flex-wrap:wrap;
+  }
+
+  textarea{width:640px; min-height:160px; padding:10px; font-family:monospace; font-size:13px; border-radius:6px; border:1px solid #ddd; resize:vertical}
+  .small{font-size:13px}
+  .col{
+    display:flex; flex-direction:column; gap:8px;
+  }
+
+  label{font-weight:600;font-size:13px}
+  button{
+    padding:8px 12px;border-radius:6px;border:0;background:#0b63d4;color:white;cursor:pointer;
+    box-shadow:0 2px 0 rgba(0,0,0,0.06);
+  }
+  button.ghost{background:#fff;color:#0b63d4;border:1px solid #0b63d4}
+  button.warn{background:#d9534f}
+  select,input[type=file]{padding:8px;border-radius:6px;border:1px solid #ddd}
+
+  /* Preview area */
+  #preview-wrap{margin-top:18px; display:flex; gap:14px; flex-wrap:wrap}
+  .a4page{
+    width:calc(var(--page-w) * 0.35); /* scale down for screen; print will be real size */
+    height:calc(var(--page-h) * 0.35);
+    background:white;
+    box-shadow:0 6px 20px rgba(0,0,0,0.08);
+    padding:4px; /* slight internal padding so cards don't touch the browser edge */
+    box-sizing:border-box;
+    overflow:hidden;
+    display:flex;
+    flex-direction:column;
+  }
+
+  /* Grid for cards, set via JS by style variables */
+  .grid{
+    display:grid;
+    gap:var(--gap);
+    flex:1;
+  }
+
+  .card{
+    border:var(--cell-border);
+    padding:var(--cell-padding);
+    box-sizing:border-box;
+    display:flex;
+    flex-direction:column;
+    justify-content:space-between;
+    font-size:11px;
+    line-height:1.05;
+    background:linear-gradient(0deg, rgba(255,255,255,0.95), rgba(255,255,255,0.98));
+    min-height:20px;
+  }
+
+  .card .top{
+    display:flex; align-items:center; gap:8px;
+  }
+  .logo{
+    width:36px; height:22px; object-fit:contain;
+    display:block;
+    border-radius:3px;
+    background:transparent;
+  }
+
+  .amount{
+    font-weight:700; font-size:13px; margin-left:auto;
+  }
+  .meta{display:flex; flex-direction:column; gap:4px; margin-top:6px; font-size:10.5px}
+  .meta .sn{ font-weight:600; font-size:10.5px; word-break:break-all }
+  .meta .pin{ font-family:monospace; letter-spacing:0.6px; font-size:11px; word-break:break-all }
+  .meta .ref{color:#333; font-size:10px}
+  .meta .date{color:#444;font-size:10px}
+
+  .controls-row{display:flex; gap:8px; align-items:center}
+  .note{color:#666;font-size:12px;margin-top:8px}
+
+  /* Print styles: use real A4; remove margins */
+  @media print {
+    body{margin:0; background:white}
+    .controls{display:none}
+    .a4page{
+      /* make each .a4page one printed page */
+      width:var(--page-w);
+      height:var(--page-h);
+      box-shadow:none;
+      margin:0;
+      page-break-after:always;
+      transform:none !important;
+      padding:0.5mm;
+    }
+    @page { size: A4; margin: 0mm; }
+    .card{border: var(--cell-border); padding:4px}
+  }
+
+  /* tiny helper */
+  .muted{color:#666;font-size:12px}
+  .btn-row{display:flex; gap:8px; align-items:center; margin-top:6px}
+</style>
+</head>
+<body>
+  <h1>Card Batch Print — A4 Preview</h1>
+
+  <div class="controls">
+    <div class="col">
+      <label>Paste card data (or upload .txt):</label>
+      <textarea id="txtInput" placeholder="Paste or drop .txt content here..."></textarea>
+      <div style="display:flex;gap:8px;align-items:center">
+        <input id="fileInput" type="file" accept=".txt" />
+        <div class="controls-row">
+          <button id="addBtn">Add (replace preview)</button>
+          <button id="mergeBtn" class="ghost">Merge (append)</button>
+          <button id="clearBtn" class="warn">Clear All</button>
+        </div>
+      </div>
+      <div class="note">Format expected (whitespace separated): <em>SerialNo Pin Network Amount Date</em><br>Example: <code>00000034687996657 24737560435061426 MTN ₦100 2025-08-23 08:12:49</code></div>
+    </div>
+
+    <div class="col" style="min-width:200px">
+      <label>Layout (cols × rows — total cells per A4):</label>
+      <select id="layoutSelect">
+        <option value="10x4">10 x 4 = 40</option>
+        <option value="15x4">15 x 4 = 60</option>
+        <option value="12x4">12 x 4 = 48</option>
+        <option value="3x10">3 x 10 = 30</option>
+        <option value="3x8">3 x 8 = 24</option>
+        <option value="5x8">5 x 8 = 40</option>
+        <option value="4x7">4 x 7 = 28</option>
+        <option value="2x10">2 x 10 = 20</option>
+      </select>
+
+      <label style="margin-top:8px">Scale preview (screen):</label>
+      <div><input id="scaleRange" type="range" min="20" max="80" value="35" /> <span id="scaleVal">35%</span></div>
+
+      <div class="btn-row" style="margin-top:10px">
+        <button id="printBtn" class="ghost">Print / Save as PDF</button>
+        <button id="downloadBtn">Download (print dialog)</button>
+        <button id="exportJson" class="ghost">Export JSON</button>
+      </div>
+
+      <div style="margin-top:10px">
+        <div class="muted">Cards in preview: <span id="countCards">0</span></div>
+        <div class="muted">Pages: <span id="countPages">0</span></div>
+      </div>
+    </div>
+  </div>
+
+  <div id="preview-wrap"></div>
+
+<script>
+(() => {
+  // Master array of card objects currently in preview
+  let cards = [];
+
+  // logos mapping (assume files are in same folder)
+  const logos = {
+    'MTN': 'mtn.png',
+    'GLO': 'glo.png',
+    'AIRTEL': 'airtel.png',
+    '9MOBILE': '9mobile.png',
+    '9': '9mobile.png', // fallback
+    'DEFAULT': 'mtn.jpeg'
+  };
+
+  const txtInput = document.getElementById('txtInput');
+  const fileInput = document.getElementById('fileInput');
+  const addBtn = document.getElementById('addBtn');
+  const mergeBtn = document.getElementById('mergeBtn');
+  const clearBtn = document.getElementById('clearBtn');
+  const layoutSelect = document.getElementById('layoutSelect');
+  const previewWrap = document.getElementById('preview-wrap');
+  const countCardsEl = document.getElementById('countCards');
+  const countPagesEl = document.getElementById('countPages');
+  const scaleRange = document.getElementById('scaleRange');
+  const scaleVal = document.getElementById('scaleVal');
+  const printBtn = document.getElementById('printBtn');
+  const downloadBtn = document.getElementById('downloadBtn');
+  const exportJson = document.getElementById('exportJson');
+
+  // parse uploaded file to text area
+  fileInput.addEventListener('change', e => {
+    const f = e.target.files[0];
+    if(!f) return;
+    const reader = new FileReader();
+    reader.onload = () => {
+      txtInput.value = reader.result;
+    };
+    reader.readAsText(f);
+  });
+
+  // scale preview on screen (not affecting print)
+  function updateScale(){
+    const v = scaleRange.value;
+    scaleVal.textContent = v + '%';
+    // set page scale by transform
+    document.querySelectorAll('.a4page').forEach(p => {
+      p.style.transform = `scale(${v/100})`;
+      p.style.transformOrigin = 'top left';
+    });
+  }
+  scaleRange.addEventListener('input', updateScale);
+
+  // trim and parse textarea content into array of card objects
+  function parseText(txt){
+    const lines = txt.split(/\r?\n/).map(l => l.trim()).filter(l=>l.length>0);
+    const out = [];
+    for(const raw of lines){
+      // skip header lines that contain "Serial" or "Serial No"
+      if(/serial/i.test(raw)) continue;
+      // split by whitespace but the Date part may contain spaces (time)
+      // we'll try regex: serial (digits), pin (digits), network (word), amount (non-space), date (rest)
+      const m = raw.match(/^(\S+)\s+(\S+)\s+([A-Za-z0-9]+)\s+(\S+)\s+(.+)$/);
+      if(m){
+        const [_, sn, pin, net, amount, date] = m;
+        out.push({
+          sn: sn,
+          pin: pin,
+          network: net.toUpperCase(),
+          amount: amount,
+          date: date
+        });
+      } else {
+        // try to salvage lines with 4 pieces, fallback: split whitespace into at least 5 pieces
+        const parts = raw.split(/\s+/);
+        if(parts.length >= 5){
+          const sn = parts[0];
+          const pin = parts[1];
+          const net = parts[2].toUpperCase();
+          const amount = parts[3];
+          const date = parts.slice(4).join(' ');
+          out.push({sn,pin,network:net,amount,date});
+        } else {
+          // ignore unknown
+          console.warn('Ignored line (unrecognized):', raw);
+        }
+      }
+    }
+    return out;
+  }
+
+  // build pages data: returns array of pages, each page is array of card objects (with ref, logo, etc)
+  function paginate(cardsList, cols, rows){
+    const perPage = cols * rows;
+    const pages = [];
+    let idx = 0;
+    while(idx < cardsList.length){
+      pages.push(cardsList.slice(idx, idx + perPage));
+      idx += perPage;
+    }
+    return pages;
+  }
+
+  // render preview from master cards array
+  function renderPreview(){
+    previewWrap.innerHTML = '';
+    const layout = layoutSelect.value;
+    const [cols, rows] = layout.split('x').map(Number);
+    const perPage = cols * rows || 40;
+    const pages = paginate(cards, cols, rows);
+
+    pages.forEach((pageCards, pageIndex) => {
+      const page = document.createElement('div');
+      page.className = 'a4page';
+      // build grid container
+      const grid = document.createElement('div');
+      grid.className = 'grid';
+      // set columns and rows using inline style so we can change table layout easily
+      grid.style.gridTemplateColumns = `repeat(${cols}, 1fr)`;
+      // compute a reasonable row height by CSS grid-auto-rows: using percentage derived from page height
+      grid.style.gridAutoRows = `calc((var(--page-h) - 10mm) / ${rows})`;
+      grid.style.boxSizing = 'border-box';
+      page.appendChild(grid);
+
+      // fill cells
+      for(let i=0;i<cols*rows;i++){
+        const cardData = pageCards[i];
+        const cell = document.createElement('div');
+        cell.className = 'card';
+        if(cardData){
+          // cell number is sequential across all pages: find global index
+          const globalIndex = cards.indexOf(cardData);
+          const cellNo = globalIndex + 1; // 1-based
+          const logoName = logos[cardData.network] || logos[cardData.network.replace(/^0+/,'')] || logos['DEFAULT'];
+
+          cell.innerHTML = `
+            <div class="top">
+              <img class="logo" src="${logoName}" alt="${cardData.network}" onerror="this.style.display='none'"/>
+              <div style="font-size:12px;font-weight:700">${cardData.network}</div>
+              <div class="amount">${cardData.amount}</div>
+            </div>
+            <div class="meta">
+              <div class="ref">Ref: J&B concept_${cellNo}</div>
+              <div class="sn">S/N: ${cardData.sn}</div>
+              <div class="pin">PIN: ${cardData.pin}</div>
+              <div class="date">Date: ${cardData.date}</div>
+            </div>
+          `;
+        } else {
+          // empty placeholder cell for alignment
+          cell.innerHTML = `<div style="opacity:0.0">&nbsp;</div>`;
+        }
+        grid.appendChild(cell);
+      }
+
+      previewWrap.appendChild(page);
+    });
+
+    // update counters
+    countCardsEl.textContent = cards.length;
+    countPagesEl.textContent = pages.length;
+
+    // apply scale to new pages
+    updateScale();
+  }
+
+  // action: Add (replace)
+  addBtn.addEventListener('click', () => {
+    const txt = txtInput.value.trim();
+    if(!txt) { alert('Paste or upload a .txt with card data first.'); return; }
+    const parsed = parseText(txt);
+    if(parsed.length === 0){ alert('No valid lines parsed. Check format.'); return; }
+    // replace cards with parsed entries
+    cards = parsed.map(c => ({...c}));
+    renderPreview();
+    // reset inputs
+    txtInput.value = '';
+    fileInput.value = '';
+  });
+
+  // action: Merge (append)
+  mergeBtn.addEventListener('click', () => {
+    const txt = txtInput.value.trim();
+    if(!txt) { alert('Paste or upload a .txt with card data first.'); return; }
+    const parsed = parseText(txt);
+    if(parsed.length === 0){ alert('No valid lines parsed. Check format.'); return; }
+    // append
+    cards = cards.concat(parsed.map(c => ({...c})));
+    renderPreview();
+    // reset inputs
+    txtInput.value = '';
+    fileInput.value = '';
+  });
+
+  // Clear all
+  clearBtn.addEventListener('click', () => {
+    if(!confirm('Clear all cards and preview?')) return;
+    cards = [];
+    renderPreview();
+  });
+
+  // layout change re-renders preview
+  layoutSelect.addEventListener('change', renderPreview);
+
+  // Print / Download button: triggers browser print dialog (user can choose Save as PDF)
+  printBtn.addEventListener('click', () => {
+    // open print dialog
+    window.print();
+  });
+  downloadBtn.addEventListener('click', () => {
+    // same as print (user can Save as PDF in dialog)
+    window.print();
+  });
+
+  // export JSON of current preview
+  exportJson.addEventListener('click', () => {
+    const data = JSON.stringify(cards, null, 2);
+    const blob = new Blob([data], {type:'application/json'});
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url; a.download = 'cards.json'; document.body.appendChild(a); a.click();
+    a.remove(); URL.revokeObjectURL(url);
+  });
+
+  // initially render empty preview
+  renderPreview();
+
+  // small accessibility: allow dropping text file onto textarea
+  txtInput.addEventListener('dragover', e => { e.preventDefault(); txtInput.style.outline='2px dashed #0b63d4' });
+  txtInput.addEventListener('dragleave', e => { txtInput.style.outline='none' });
+  txtInput.addEventListener('drop', e => {
+    e.preventDefault(); txtInput.style.outline='none';
+    const f = (e.dataTransfer.files && e.dataTransfer.files[0]);
+    if(f){
+      if(f.type.includes('text') || f.name.endsWith('.txt')){
+        const reader = new FileReader();
+        reader.onload = ()=> txtInput.value = reader.result;
+        reader.readAsText(f);
+      } else {
+        alert('Drop a .txt file please.');
+      }
+    } else {
+      txtInput.value = e.dataTransfer.getData('text/plain') || txtInput.value;
+    }
+  });
+
+})();
+</script>
+</body>
+</html>

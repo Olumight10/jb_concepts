@@ -1,0 +1,545 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Card Printing System</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+            font-family: Arial, sans-serif;
+        }
+        
+        body {
+            padding: 20px;
+            background-color: #f5f5f5;
+        }
+        
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+            background-color: white;
+            padding: 20px;
+            border-radius: 8px;
+            box-shadow: 0 0 10px rgba(0,0,0,0.1);
+        }
+        
+        h1 {
+            text-align: center;
+            margin-bottom: 20px;
+            color: #333;
+        }
+        
+        .input-section {
+            margin-bottom: 20px;
+            padding: 15px;
+            border: 1px solid #ddd;
+            border-radius: 5px;
+        }
+        
+        .input-section h2 {
+            margin-bottom: 10px;
+            color: #555;
+        }
+        
+        .input-options {
+            display: flex;
+            gap: 10px;
+            margin-bottom: 10px;
+        }
+        
+        .input-options button {
+            padding: 8px 15px;
+            background-color: #4CAF50;
+            color: white;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+        }
+        
+        .input-options button:hover {
+            background-color: #45a049;
+        }
+        
+        textarea {
+            width: 100%;
+            height: 150px;
+            padding: 10px;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            resize: vertical;
+        }
+        
+        .file-input {
+            margin-top: 10px;
+        }
+        
+        .controls {
+            display: flex;
+            gap: 10px;
+            margin: 15px 0;
+            flex-wrap: wrap;
+        }
+        
+        .controls button {
+            padding: 10px 15px;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            font-weight: bold;
+        }
+        
+        #addBtn {
+            background-color: #2196F3;
+            color: white;
+        }
+        
+        #addBtn:hover {
+            background-color: #0b7dda;
+        }
+        
+        #mergeBtn {
+            background-color: #FF9800;
+            color: white;
+        }
+        
+        #mergeBtn:hover {
+            background-color: #e68a00;
+        }
+        
+        #downloadBtn {
+            background-color: #4CAF50;
+            color: white;
+        }
+        
+        #downloadBtn:hover {
+            background-color: #45a049;
+        }
+        
+        #printBtn {
+            background-color: #9C27B0;
+            color: white;
+        }
+        
+        #printBtn:hover {
+            background-color: #7b1fa2;
+        }
+        
+        .layout-selector {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            margin: 15px 0;
+        }
+        
+        select {
+            padding: 8px;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+        }
+        
+        .preview-section {
+            margin-top: 20px;
+        }
+        
+        .preview-section h2 {
+            margin-bottom: 10px;
+            color: #555;
+        }
+        
+        .page {
+            width: 210mm;
+            height: 297mm;
+            margin: 0 auto 20px;
+            padding: 5mm;
+            background-color: white;
+            box-shadow: 0 0 10px rgba(0,0,0,0.1);
+            page-break-after: always;
+            position: relative;
+            overflow: hidden;
+        }
+        
+        .card-grid {
+            display: grid;
+            width: 100%;
+            height: 100%;
+            gap: 2mm;
+        }
+        
+        .card {
+            border: 1px solid #ddd;
+            padding: 3mm;
+            display: flex;
+            flex-direction: column;
+            justify-content: space-between;
+            font-size: 8px;
+            position: relative;
+            overflow: hidden;
+        }
+        
+        .card-logo {
+            width: 20px;
+            height: 20px;
+            margin-bottom: 2mm;
+        }
+        
+        .card-amount {
+            font-weight: bold;
+            font-size: 10px;
+            margin-bottom: 1mm;
+        }
+        
+        .card-ref {
+            font-size: 7px;
+            margin-bottom: 1mm;
+        }
+        
+        .card-serial, .card-pin {
+            font-family: monospace;
+            font-size: 7px;
+            margin-bottom: 1mm;
+        }
+        
+        .card-date {
+            font-size: 7px;
+            color: #666;
+        }
+        
+        .no-preview {
+            text-align: center;
+            padding: 20px;
+            color: #888;
+            font-style: italic;
+        }
+        
+        @media print {
+            body {
+                background-color: white;
+                padding: 0;
+            }
+            
+            .container {
+                box-shadow: none;
+                padding: 0;
+            }
+            
+            .input-section, .controls, .layout-selector, .preview-section h2 {
+                display: none;
+            }
+            
+            .page {
+                box-shadow: none;
+                margin: 0;
+                padding: 5mm;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>Card Printing System</h1>
+        
+        <div class="input-section">
+            <h2>Input Card Data</h2>
+            <div class="input-options">
+                <button id="pasteBtn">Paste Text</button>
+                <input type="file" id="fileInput" class="file-input" accept=".txt">
+            </div>
+            <textarea id="textInput" placeholder="Paste your card data here or upload a .txt file"></textarea>
+        </div>
+        
+        <div class="controls">
+            <button id="addBtn">Add Cards</button>
+            <button id="mergeBtn">Merge Cards</button>
+            <button id="downloadBtn">Download PDF</button>
+            <button id="printBtn">Print</button>
+        </div>
+        
+        <div class="layout-selector">
+            <label for="layoutSelect">Layout:</label>
+            <select id="layoutSelect">
+                <option value="10x4">10x4 (40 cards per page)</option>
+                <option value="15x4">15x4 (60 cards per page)</option>
+                <option value="12x4">12x4 (48 cards per page)</option>
+                <option value="3x10">3x10 (30 cards per page)</option>
+                <option value="3x8">3x8 (24 cards per page)</option>
+            </select>
+        </div>
+        
+        <div class="preview-section">
+            <h2>Preview</h2>
+            <div id="previewContainer">
+                <div class="no-preview">No cards added yet. Add cards to see preview.</div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // Global variables
+        let allCards = [];
+        const networkLogos = {
+            'MTN': 'mtn.jpeg',
+            'AIRTEL': 'airtel.jpg',
+            'GLO': 'glo.png',
+            '9MOBILE': '9mobile.png'
+        };
+        
+        // DOM elements
+        const textInput = document.getElementById('textInput');
+        const fileInput = document.getElementById('fileInput');
+        const pasteBtn = document.getElementById('pasteBtn');
+        const addBtn = document.getElementById('addBtn');
+        const mergeBtn = document.getElementById('mergeBtn');
+        const downloadBtn = document.getElementById('downloadBtn');
+        const printBtn = document.getElementById('printBtn');
+        const layoutSelect = document.getElementById('layoutSelect');
+        const previewContainer = document.getElementById('previewContainer');
+        
+        // Event listeners
+        pasteBtn.addEventListener('click', handlePaste);
+        fileInput.addEventListener('change', handleFileUpload);
+        addBtn.addEventListener('click', handleAddCards);
+        mergeBtn.addEventListener('click', handleMergeCards);
+        downloadBtn.addEventListener('click', handleDownloadPDF);
+        printBtn.addEventListener('click', handlePrint);
+        layoutSelect.addEventListener('change', renderPreview);
+        
+        // Handle paste button click
+        function handlePaste() {
+            navigator.clipboard.readText()
+                .then(text => {
+                    textInput.value = text;
+                })
+                .catch(err => {
+                    console.error('Failed to read clipboard contents: ', err);
+                    alert('Failed to read from clipboard. Please paste manually.');
+                });
+        }
+        
+        // Handle file upload
+        function handleFileUpload(event) {
+            const file = event.target.files[0];
+            if (!file) return;
+            
+            const reader = new FileReader();
+            reader.onload = function(e) {
+                textInput.value = e.target.result;
+            };
+            reader.readAsText(file);
+        }
+        
+        // Parse text input into card objects
+        function parseCardData(text) {
+            const lines = text.split('\n');
+            const cards = [];
+            
+            for (const line of lines) {
+                // Skip empty lines and header lines
+                if (!line.trim() || line.includes('Serial No.') || line.includes('Pin') || line.includes('Network')) {
+                    continue;
+                }
+                
+                // Split by multiple spaces to handle the data format
+                const parts = line.trim().split(/\s+/);
+                
+                // Check if we have enough parts to form a card
+                if (parts.length >= 5) {
+                    // Extract serial number (first part)
+                    const serial = parts[0];
+                    
+                    // Extract PIN (second part)
+                    const pin = parts[1];
+                    
+                    // Extract network (third part)
+                    const network = parts[2];
+                    
+                    // Extract amount (fourth part)
+                    const amount = parts[3];
+                    
+                    // Extract date (remaining parts)
+                    const date = parts.slice(4).join(' ');
+                    
+                    cards.push({
+                        serial,
+                        pin,
+                        network,
+                        amount,
+                        date
+                    });
+                }
+            }
+            
+            return cards;
+        }
+        
+        // Handle add cards button click
+        function handleAddCards() {
+            const text = textInput.value.trim();
+            if (!text) {
+                alert('Please enter or upload card data first.');
+                return;
+            }
+            
+            const newCards = parseCardData(text);
+            allCards = newCards; // Replace existing cards
+            textInput.value = ''; // Clear input
+            fileInput.value = ''; // Clear file input
+            
+            renderPreview();
+        }
+        
+        // Handle merge cards button click
+        function handleMergeCards() {
+            const text = textInput.value.trim();
+            if (!text) {
+                alert('Please enter or upload card data first.');
+                return;
+            }
+            
+            const newCards = parseCardData(text);
+            allCards = [...allCards, ...newCards]; // Merge with existing cards
+            textInput.value = ''; // Clear input
+            fileInput.value = ''; // Clear file input
+            
+            renderPreview();
+        }
+        
+        // Render preview based on current cards and layout
+        function renderPreview() {
+            if (allCards.length === 0) {
+                previewContainer.innerHTML = '<div class="no-preview">No cards added yet. Add cards to see preview.</div>';
+                return;
+            }
+            
+            const layout = layoutSelect.value;
+            const [rows, cols] = layout.split('x').map(Number);
+            const cardsPerPage = rows * cols;
+            
+            // Clear preview container
+            previewContainer.innerHTML = '';
+            
+            // Create pages
+            for (let i = 0; i < allCards.length; i += cardsPerPage) {
+                const pageCards = allCards.slice(i, i + cardsPerPage);
+                createPage(pageCards, rows, cols, i);
+            }
+        }
+        
+        // Create a page with cards
+        function createPage(cards, rows, cols, startIndex) {
+            const page = document.createElement('div');
+            page.className = 'page';
+            
+            const grid = document.createElement('div');
+            grid.className = 'card-grid';
+            grid.style.gridTemplateColumns = `repeat(${cols}, 1fr)`;
+            grid.style.gridTemplateRows = `repeat(${rows}, 1fr)`;
+            
+            cards.forEach((card, index) => {
+                const cardElement = createCardElement(card, startIndex + index + 1);
+                grid.appendChild(cardElement);
+            });
+            
+            page.appendChild(grid);
+            previewContainer.appendChild(page);
+        }
+        
+        // Create a card element
+        function createCardElement(card, cellNumber) {
+            const cardDiv = document.createElement('div');
+            cardDiv.className = 'card';
+            
+            const logoImg = document.createElement('img');
+            logoImg.className = 'card-logo';
+            logoImg.src = networkLogos[card.network] || 'default.png';
+            logoImg.alt = card.network;
+            
+            const amountDiv = document.createElement('div');
+            amountDiv.className = 'card-amount';
+            amountDiv.textContent = card.amount;
+            
+            const refDiv = document.createElement('div');
+            refDiv.className = 'card-ref';
+            refDiv.textContent = `J&B concept_${cellNumber}`;
+            
+            const serialDiv = document.createElement('div');
+            serialDiv.className = 'card-serial';
+            serialDiv.textContent = `S/N: ${card.serial}`;
+            
+            const pinDiv = document.createElement('div');
+            pinDiv.className = 'card-pin';
+            pinDiv.textContent = `PIN: ${card.pin}`;
+            
+            const dateDiv = document.createElement('div');
+            dateDiv.className = 'card-date';
+            dateDiv.textContent = card.date;
+            
+            cardDiv.appendChild(logoImg);
+            cardDiv.appendChild(amountDiv);
+            cardDiv.appendChild(refDiv);
+            cardDiv.appendChild(serialDiv);
+            cardDiv.appendChild(pinDiv);
+            cardDiv.appendChild(dateDiv);
+            
+            return cardDiv;
+        }
+        
+        // Handle download PDF
+        function handleDownloadPDF() {
+            if (allCards.length === 0) {
+                alert('No cards to download.');
+                return;
+            }
+            
+            const { jsPDF } = window.jspdf;
+            const doc = new jsPDF({
+                orientation: 'portrait',
+                unit: 'mm',
+                format: 'a4'
+            });
+            
+            const pages = document.querySelectorAll('.page');
+            
+            // Function to capture and add a page to PDF
+            const capturePage = (index) => {
+                if (index >= pages.length) {
+                    doc.save('cards.pdf');
+                    return;
+                }
+                
+                html2canvas(pages[index], {
+                    scale: 2,
+                    useCORS: true,
+                    logging: false
+                }).then(canvas => {
+                    const imgData = canvas.toDataURL('image/jpeg', 1.0);
+                    
+                    if (index > 0) {
+                        doc.addPage();
+                    }
+                    
+                    doc.addImage(imgData, 'JPEG', 0, 0, 210, 297);
+                    
+                    capturePage(index + 1);
+                });
+            };
+            
+            capturePage(0);
+        }
+        
+        // Handle print
+        function handlePrint() {
+            if (allCards.length === 0) {
+                alert('No cards to print.');
+                return;
+            }
+            
+            window.print();
+        }
+    </script>
+</body>
+</html>

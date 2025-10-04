@@ -1,0 +1,292 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Card Printer</title>
+    <style>
+        body {
+            margin: 0;
+            padding: 0;
+            font-family: Arial, sans-serif;
+            background-color: #f4f4f4;
+        }
+
+        #input-section {
+            padding: 20px;
+            background-color: #fff;
+            border-bottom: 1px solid #ccc;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+
+        #text-input {
+            width: 100%;
+            height: 200px;
+            margin-bottom: 10px;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            padding: 10px;
+            box-sizing: border-box;
+        }
+
+        #file-input {
+            margin-bottom: 10px;
+        }
+
+        #layout-select {
+            margin-bottom: 10px;
+            padding: 5px;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+        }
+
+        button {
+            padding: 8px 16px;
+            margin-right: 10px;
+            background-color: #007bff;
+            color: white;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+        }
+
+        button:hover {
+            background-color: #0056b3;
+        }
+
+        #preview {
+            margin: 20px auto;
+            max-width: 210mm;
+        }
+
+        .a4 {
+            width: 210mm;
+            height: 297mm;
+            margin: 20px auto;
+            background-color: white;
+            border: 1px solid #ccc;
+            box-sizing: border-box;
+            box-shadow: 0 4px 8px rgba(0,0,0,0.1);
+            page-break-after: always;
+        }
+
+        .card {
+            border: 1px solid black;
+            box-sizing: border-box;
+            text-align: center;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            padding: 1mm;
+            font-size: 6pt;
+            overflow: hidden;
+        }
+
+        .card img {
+            max-width: 80%;
+            max-height: 20%;
+            height: auto;
+            margin-bottom: 1mm;
+        }
+
+        .card p {
+            margin: 0.5mm 0;
+            word-break: break-all;
+            white-space: normal;
+            line-height: 1.1;
+        }
+
+        .card .amount {
+            font-size: 10pt;
+            font-weight: bold;
+        }
+
+        @media print {
+            @page {
+                size: A4 portrait;
+                margin: 0;
+            }
+
+            body {
+                margin: 0;
+                background-color: white;
+            }
+
+            #input-section, #print-btn, #download-btn {
+                display: none;
+            }
+
+            #preview {
+                margin: 0;
+            }
+
+            .a4 {
+                margin: 0;
+                border: none;
+                box-shadow: none;
+                page-break-after: always;
+            }
+
+            .a4:last-child {
+                page-break-after: avoid;
+            }
+        }
+    </style>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+    <script src="https://html2canvas.hertzen.com/dist/html2canvas.min.js"></script>
+</head>
+<body>
+    <div id="input-section">
+        <label for="text-input">Paste Text:</label>
+        <textarea id="text-input" placeholder="Paste text here..."></textarea>
+        <label for="file-input">Upload TXT File:</label>
+        <input type="file" id="file-input" accept=".txt">
+        <label for="layout-select">Select Layout:</label>
+        <select id="layout-select">
+            <option value="10x4">10 x 4 = 40</option>
+            <option value="15x4">15 x 4 = 60</option>
+            <option value="12x4">12 x 4 = 48</option>
+            <option value="10x3">10 x 3 = 30</option> <!-- Adjusted for rows > cols -->
+            <option value="8x3">8 x 3 = 24</option> <!-- Adjusted for rows > cols -->
+            <!-- Additional layouts with rows >= cols -->
+            <option value="5x4">5 x 4 = 20</option>
+            <option value="8x4">8 x 4 = 32</option>
+            <option value="6x5">6 x 5 = 30</option>
+            <option value="6x4">6 x 4 = 24</option>
+            <option value="20x3">20 x 3 = 60</option>
+        </select>
+        <button id="add-btn">Add</button>
+        <button id="merge-btn">Merge</button>
+    </div>
+    <div id="preview"></div>
+    <button id="print-btn">Print</button>
+    <button id="download-btn">Download PDF</button>
+
+    <script>
+        let cards = [];
+
+        const logoMap = {
+            'MTN': 'mtn.png',
+            'GLO': 'glo.png',
+            'AIRTEL': 'airtel.png',
+            '9MOBILE': '9mobile.png'
+        };
+
+        function parseText(text) {
+            const lines = text.split('\n').map(l => l.trim()).filter(l => l && !l.startsWith('Serial'));
+            const newCards = [];
+            for (let line of lines) {
+                const parts = line.split(/\s+/);
+                if (parts.length < 6) continue;
+                const sn = parts[0];
+                const pin = parts[1];
+                const network = parts[2].toUpperCase();
+                const amount = parts[3];
+                const date = parts[4] + ' ' + parts[5];
+                newCards.push({ sn, pin, network, amount, date });
+            }
+            return newCards;
+        }
+
+        function readFile(file) {
+            return new Promise((resolve, reject) => {
+                const reader = new FileReader();
+                reader.onload = e => resolve(e.target.result);
+                reader.onerror = reject;
+                reader.readAsText(file);
+            });
+        }
+
+        async function handleAddOrMerge(isAdd) {
+            let text = document.getElementById('text-input').value;
+            const fileInput = document.getElementById('file-input');
+            const file = fileInput.files[0];
+            if (file) {
+                text = await readFile(file);
+                fileInput.value = '';
+            }
+            if (!text) return;
+            const newCards = parseText(text);
+            if (isAdd) {
+                cards = newCards;
+            } else {
+                cards = cards.concat(newCards);
+            }
+            document.getElementById('text-input').value = '';
+            renderPreview();
+        }
+
+        function renderPreview() {
+            const preview = document.getElementById('preview');
+            preview.innerHTML = '';
+            if (!cards.length) return;
+            const layout = document.getElementById('layout-select').value;
+            let [a, b] = layout.split('x').map(Number);
+            let rows = a;
+            let cols = b;
+            if (a < b) {
+                rows = b;
+                cols = a;
+            }
+            const cardsPerPage = rows * cols;
+            let cellNo = 1;
+            for (let i = 0; i < cards.length; i += cardsPerPage) {
+                const page = document.createElement('div');
+                page.className = 'a4';
+                page.style.display = 'grid';
+                page.style.gridTemplateColumns = `repeat(${cols}, 1fr)`;
+                page.style.gridTemplateRows = `repeat(${rows}, 1fr)`;
+                page.style.gridGap = '0';
+                page.style.padding = '0';
+                page.style.margin = '0';
+                for (let j = 0; j < cardsPerPage && i + j < cards.length; j++) {
+                    const c = cards[i + j];
+                    const cardDiv = document.createElement('div');
+                    cardDiv.className = 'card';
+                    const logo = document.createElement('img');
+                    logo.src = logoMap[c.network] || '';
+                    cardDiv.appendChild(logo);
+                    const amountP = document.createElement('p');
+                    amountP.className = 'amount';
+                    amountP.textContent = c.amount;
+                    cardDiv.appendChild(amountP);
+                    const refP = document.createElement('p');
+                    refP.textContent = `Ref: J&B concept_${cellNo}`;
+                    cardDiv.appendChild(refP);
+                    const snP = document.createElement('p');
+                    snP.textContent = `S/N: ${c.sn}`;
+                    cardDiv.appendChild(snP);
+                    const pinP = document.createElement('p');
+                    pinP.textContent = `PIN: ${c.pin}`;
+                    cardDiv.appendChild(pinP);
+                    const dateP = document.createElement('p');
+                    dateP.textContent = `Date: ${c.date}`;
+                    cardDiv.appendChild(dateP);
+                    page.appendChild(cardDiv);
+                    cellNo++;
+                }
+                preview.appendChild(page);
+            }
+        }
+
+        document.getElementById('add-btn').addEventListener('click', () => handleAddOrMerge(true));
+        document.getElementById('merge-btn').addEventListener('click', () => handleAddOrMerge(false));
+        document.getElementById('print-btn').addEventListener('click', () => window.print());
+        document.getElementById('download-btn').addEventListener('click', async () => {
+            const { jsPDF } = window.jspdf;
+            const doc = new jsPDF('p', 'mm', 'a4');
+            const pages = document.querySelectorAll('.a4');
+            for (let i = 0; i < pages.length; i++) {
+                const canvas = await html2canvas(pages[i], { scale: 2, useCORS: true });
+                const imgData = canvas.toDataURL('image/jpeg', 1.0);
+                doc.addImage(imgData, 'JPEG', 0, 0, 210, 297, undefined, 'FAST');
+                if (i < pages.length - 1) {
+                    doc.addPage();
+                }
+            }
+            doc.save('cards.pdf');
+        });
+    </script>
+</body>
+</html>
